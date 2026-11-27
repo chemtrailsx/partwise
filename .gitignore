@@ -9,3 +9,5 @@ __pycache__/
 
 .vercel
 .env*
+pyproject.toml
+uv.lock
