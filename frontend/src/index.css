@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { @apply bg-ink-950 text-slate-100 antialiased; font-feature-settings: "tnum" 1; }
+
+@layer components {
+  .card { @apply rounded-2xl border border-ink-700 bg-ink-900; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-mint-500 text-ink-950 hover:bg-mint-400; }
+  .btn-ghost { @apply btn border border-ink-600 text-slate-200 hover:bg-ink-800; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold tracking-wide; }
+  .label { @apply text-xs font-semibold uppercase tracking-wider text-slate-400; }
+  .input { @apply w-full rounded-xl border border-ink-600 bg-ink-850 px-3 py-2 text-sm text-slate-100 outline-none focus:border-mint-500; }
+}
+
+.fade-in { animation: fade .35s ease-out both; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.pulse-ring { animation: ring 1.6s ease-out infinite; }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(62,207,142,.55);} 100% { box-shadow: 0 0 0 14px rgba(62,207,142,0);} }

@@ -1,0 +1,46 @@
+# PartWise decision rules — versioned per dealer group / OEM.
+# Every recommendation records the rules version it was made under.
+version: 1
+scope: dealer-group/apex-motors
+note: Initial pilot policy
+
+safety:
+  # Parts in these categories are always fitted new. No exceptions.
+  new_only_categories: [brakes, steering, airbags, suspension, tyres, seatbelts]
+
+warranty:
+  # Factory warranty covers every category except these (wear & accident damage).
+  factory_excluded_categories: [body]
+
+recycled:
+  allowed_conditions: [remanufactured, recycled]
+  min_grade: B              # A = like-new, B = minor cosmetic wear, C = functional only
+  max_transfer_km: 30       # only consider sister stores within this distance
+  min_warranty_months: 6
+  require_cheaper: true     # never recommend a recycled part that costs more than new
+  require_greener: true     # ...or that emits more CO2 than new
+  young_car_years: 2        # cars younger than this always get new parts
+
+scoring:
+  weights:
+    price: 0.35
+    wait: 0.20
+    co2: 0.25
+    warranty: 0.10
+    car_age_fit: 0.10
+
+co2:
+  remanufactured_factor: 0.18   # BORG Automotive LCA: ~82% less CO2 than new
+  recycled_factor: 0.08         # tested used part: cleaning + testing only
+  transport_kg_per_km: 0.15     # store-to-store shuttle
+  oem_logistics_kg: 2.0         # inbound freight for a factory order
+
+logistics:
+  same_day_km: 10       # sister stores closer than this deliver the same day
+  oem_order_days: 3
+  transfer_fee_inr: 250
+
+green_points:
+  per_kg_co2: 10
+  reward_threshold: 500
+  reward_name: Free premium car wash + ₹500 service voucher

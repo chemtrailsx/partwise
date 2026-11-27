@@ -1,0 +1,10 @@
+# Render blueprint: New > Blueprint > pick this repo. Free plan works for demos.
+services:
+  - type: web
+    name: partwise
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/meta
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false   # paste the key in the Render dashboard; it is never stored in git

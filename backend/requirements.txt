@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+pyyaml>=6.0
+numpy>=1.26
+# No LLM SDK needed: PartWise calls free-tier OpenAI-compatible APIs (Groq, Gemini, Cohere, OpenRouter) over HTTPS.
