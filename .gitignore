@@ -5,3 +5,7 @@ frontend/dist/
 __pycache__/
 *.pyc
 *.tsbuildinfo
+.vercel
+
+.vercel
+.env*

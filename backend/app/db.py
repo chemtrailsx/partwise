@@ -9,7 +9,9 @@ from contextlib import contextmanager
 from datetime import datetime
 
 DB_PATH = os.environ.get(
-    "PARTWISE_DB", os.path.join(os.path.dirname(__file__), "..", "partwise.db")
+    "PARTWISE_DB",
+    # Serverless hosts (Vercel) only allow writes under /tmp.
+    "/tmp/partwise.db" if os.environ.get("VERCEL") else os.path.join(os.path.dirname(__file__), "..", "partwise.db"),
 )
 
 SCHEMA = """

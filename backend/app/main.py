@@ -25,9 +25,17 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 SUBSCRIPTION_PER_ROOFTOP_INR = 15000  # Tekion ARC add-on, per month
 
 
-@app.on_event("startup")
-def _startup():
-    seed.ensure_seeded()
+_seeded = False
+
+
+@app.middleware("http")
+async def _ensure_seeded(request: Request, call_next):
+    """Seed on first request (serverless hosts may skip ASGI startup events)."""
+    global _seeded
+    if not _seeded:
+        seed.ensure_seeded()
+        _seeded = True
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------- helpers
