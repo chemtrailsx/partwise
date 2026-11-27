@@ -29,7 +29,7 @@ Live at **https://partwise-ten.vercel.app** (customer booking at `/book`).
 - `GROQ_API_KEY` is an encrypted Vercel environment variable.
 - **Durable data:** serverless disks are temporary, so `backend/app/blobstore.py` keeps a snapshot of the SQLite file in a *private* Vercel Blob store (`BLOB_READ_WRITE_TOKEN`). It restores on cold start, uploads after every write, and reloads when a request asks for a repair order another instance created. Locally (no token) it does nothing.
 
-To redeploy: `cd frontend && npm run build && cd .. && vercel deploy --prod`.
+**Auto-deploy:** every push to `main` on GitHub builds and deploys to production automatically (Vercel builds the React app and the Python API itself). Pushes to other branches get their own preview URL. Manual fallback: `vercel deploy --prod`.
 
 ## Deploy elsewhere (Docker)
 
