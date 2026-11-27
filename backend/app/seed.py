@@ -6,6 +6,7 @@ so the demo looks the same every time it is reset.
 from __future__ import annotations
 
 import json
+import math
 import random
 from datetime import date, datetime, timedelta
 
@@ -203,25 +204,39 @@ def _seed_history(c, rng: random.Random):
             else:
                 p = rng.choice(non_safety)
                 alt = 1 if rng.random() < 0.85 else 0
-                uptake = 0.28 + 0.42 * progress
-                if alt and rng.random() < uptake:
-                    decision = "RECYCLED_RECOMMENDED"
-                    cond = rng.choice(["remanufactured", "recycled"])
-                else:
-                    decision = "RECYCLED_RECOMMENDED" if alt and rng.random() < 0.6 else "NEW_RECOMMENDED"
-                    cond = "new"
             pid, _, cat, _, price, co2, _ = parts[p[0]]
+            feats, accepted = None, None
+            if r >= 0.30 and alt:
+                # Customer offered a green part next to new: simulate their choice from a hidden
+                # preference profile (they care more about warranty and wait than the default policy).
+                g_warranty = rng.choices([3, 6, 12], weights=[2, 3, 5])[0]
+                n_warranty = rng.choice([12, 24])
+                feats = {
+                    "price": round(rng.uniform(0.25, 0.6), 4),
+                    "wait": round(rng.choice([-1, 0, 0, 1, 1, 2]) / 3, 4),
+                    "co2": round(rng.uniform(0.6, 0.92), 4),
+                    "warranty": round((g_warranty - n_warranty) / 24, 4),
+                    "car_age_fit": round(rng.uniform(-0.3, 0.6), 4),
+                }
+                logit = (-0.6 + 4.5 * feats["price"] + 2.2 * feats["wait"] + 0.6 * feats["co2"]
+                         + 4.0 * feats["warranty"] + 0.5 * feats["car_age_fit"] + 1.2 * progress)
+                accepted = int(rng.random() < 1 / (1 + math.exp(-logit)))
+                decision = "RECYCLED_RECOMMENDED"
+                cond = rng.choice(["remanufactured", "recycled"]) if accepted else "new"
+            elif r >= 0.30:
+                decision, cond = "NEW_RECOMMENDED", "new"
             green = cond != "new"
-            savings = int(round(price * rng.uniform(0.3, 0.5), -2)) if green else 0
-            co2_saved = round(co2 * rng.uniform(0.7, 0.9), 1) if green else 0.0
-            wait_saved = float(rng.choice([0, 1, 1, 2, 3])) if green else 0.0
+            savings = int(round(price * feats["price"], -2)) if green else 0
+            co2_saved = round(co2 * feats["co2"], 1) if green else 0.0
+            wait_saved = float(max(0, round(feats["wait"] * 3))) if green else 0.0
             idle = int(price * rng.uniform(0.4, 0.6)) if green and rng.random() < 0.55 else 0
             fee = 250 if green and rng.random() < 0.8 else 0
             ts = d.replace(hour=rng.randint(9, 18), minute=rng.randint(0, 59), second=0, microsecond=0)
             c.execute(
-                "INSERT INTO outcomes (ro_id, line_id, rooftop_id, part_id, category, decision, chosen_condition, had_alternative, savings_inr, co2_saved_kg, wait_days_saved, idle_value_moved, transfer_fee, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO outcomes (ro_id, line_id, rooftop_id, part_id, category, decision, chosen_condition, had_alternative, savings_inr, co2_saved_kg, wait_days_saved, idle_value_moved, transfer_fee, created_at, features, accepted) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (f"RO-{rng.randint(20000, 24700)}", None, roof, pid, cat, decision, cond, alt,
-                 savings, co2_saved, wait_saved, idle, fee, ts.isoformat(timespec="seconds")),
+                 savings, co2_saved, wait_saved, idle, fee, ts.isoformat(timespec="seconds"),
+                 json.dumps(feats) if feats else None, accepted),
             )
 
 

@@ -114,6 +114,10 @@ def conn(restore: bool = True) -> sqlite3.Connection:
         for col, typ in (("source", "TEXT DEFAULT 'arc'"), ("diagnosis", "TEXT")):
             if col not in cols:
                 _conn.execute(f"ALTER TABLE repair_orders ADD COLUMN {col} {typ}")
+        ocols = {r[1] for r in _conn.execute("PRAGMA table_info(outcomes)")}
+        for col, typ in (("features", "TEXT"), ("accepted", "INTEGER")):
+            if col not in ocols:
+                _conn.execute(f"ALTER TABLE outcomes ADD COLUMN {col} {typ}")
         _conn.commit()
     return _conn
 

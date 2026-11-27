@@ -102,7 +102,7 @@ export interface RO {
   sms: { id: number; to_phone: string; body: string; link: string; status: string; created_at: string }[];
 }
 
-export interface Diagnosis { summary: string; mode: string; parts: { part_id: string; name: string; confidence: number; reason: string }[] }
+export interface Diagnosis { summary: string; mode: string; voice?: { language: string; english: string }; parts: { part_id: string; name: string; confidence: number; reason: string }[] }
 
 export interface Part { id: string; name: string; category: string; safety_critical: number; new_price: number }
 
@@ -130,6 +130,7 @@ export interface Meta {
   llm: { mode: "llm" | "template"; provider: string | null; model: string | null };
   rules_version: number;
   twilio: boolean;
+  voice: boolean;
 }
 
 export class ApiError extends Error {}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Leaf, Sparkles, Wrench, Lock } from "lucide-react";
-import { api } from "../api";
+import { Leaf, Sparkles, Wrench, Lock, Mic } from "lucide-react";
+import { api, type Meta } from "../api";
+import VoiceInput, { type Transcript } from "../components/VoiceInput";
 
 const CATS = [
   ["engine", "Engine"], ["electrical", "Electrical"], ["hvac", "AC / heating"], ["transmission", "Gearbox"], ["body", "Body"],
@@ -24,8 +25,15 @@ export default function Book() {
   const [complaint, setComplaint] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [voice, setVoice] = useState<Transcript | null>(null);
 
-  useEffect(() => { document.title = "Book a service · Apex Motors"; }, []);
+  useEffect(() => {
+    document.title = "Book a service · Apex Motors";
+    api.get<Meta>("/api/meta").then((m) => setVoiceOn(!!m.voice)).catch(() => setVoiceOn(false));
+  }, []);
+
+  const isEnglish = !voice || ["en", "english"].includes(voice.language);
 
   const set = (k: string, v: unknown) => setF({ ...f, [k]: v });
   const phoneOk = f.phone.replace(/\D/g, "").length >= 10;
@@ -39,6 +47,9 @@ export default function Book() {
       const r = await api.post<{ token: string }>("/api/intake", {
         vehicle: { ...f, factory_warranty_until: f.factory_warranty_until || null, ext_warranty_until: f.ext_warranty_active ? f.ext_warranty_until : null },
         complaint,
+        voice: !!voice,
+        language: voice?.language ?? null,
+        complaint_en: voice && !isEnglish && voice.text === complaint ? voice.english : null,
       });
       nav(`/c/${r.token}`);
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -55,6 +66,14 @@ export default function Book() {
 
         <div className="-mt-4 space-y-4 rounded-t-3xl bg-slate-50 px-4 pb-10 pt-5">
           <Card title="Describe the problem" icon={<Wrench size={16} />}>
+            {voiceOn && <VoiceInput onTranscript={(t) => { setVoice(t); setComplaint(t.text); }} />}
+            {voice && (
+              <div className="mb-2 rounded-xl bg-emerald-50 p-2.5 text-xs text-slate-600">
+                <div className="flex items-center gap-1 font-semibold text-[#17784f]"><Mic size={12} /> Voice note · heard in {voice.language}</div>
+                {!isEnglish && voice.text === complaint && <div className="mt-1"><span className="font-semibold">English:</span> {voice.english}</div>}
+                <div className="mt-1 text-slate-400">Check the text below and fix anything we misheard.</div>
+              </div>
+            )}
             <textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} rows={5} maxLength={2000}
               placeholder="e.g. The car makes a clicking noise and won't start…"
               className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-[#22a971]" />

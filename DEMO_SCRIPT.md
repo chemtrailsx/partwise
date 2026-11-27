@@ -34,6 +34,10 @@ Filter `RO-24817`: rule hits, scores, AI mode, approval, SMS, customer choice, t
 - On the laptop, the booking appears in the Advisor Console within 5 seconds, tagged ONLINE BOOKING. Open it, adjust the lines (or add a part that isn't listed), **Run PartWise**, **Approve**.
 - The judge's phone turns into their estimate by itself. They choose and get Green Points.
 
+## 5c. Voice booking and learning (60s)
+- On `/book`, tap **Tap to speak** and describe the problem in Hindi or Kannada. It's transcribed, translated, and the likely parts appear for the advisor with a VOICE NOTE tag.
+- On **Rules & What-if**, show **Learned from customer decisions**: "Customers weigh warranty about 3.8× more than our policy assumed. The model predicts their choices 78% of the time, versus 69% for a naive guess. CO₂ is a goal we protect, so learning can never lower it." Click **Try in What-if**, then **Publish learned weights**: a new audited rules version.
+
 ## 6. Business case (40s): Impact Dashboard
 - 90-day pilot: tonnes of CO₂ avoided, ₹ lakhs saved for customers, recycled uptake rising week over week.
 - **One recommendation, three winners**: customer savings, idle stock turned into sales for the dealer group, and Tekion revenue (per-rooftop subscription plus transfer fees).

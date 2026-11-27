@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Zap, Search, Scale, Calculator, Sparkles, CheckCircle2, Send, MessageSquare, ChevronDown,
-  Truck, Leaf, Clock, IndianRupee, ShieldCheck, Lock, Eye, ExternalLink, RefreshCw, Trash2, Plus, Smartphone,
+  Truck, Leaf, Clock, IndianRupee, ShieldCheck, Lock, Eye, ExternalLink, RefreshCw, Trash2, Plus, Smartphone, Mic,
 } from "lucide-react";
 import { api, type Line, type Option, type Part, type RO } from "../api";
 import { AiBadge, DecisionChip, KindBadge, StatusPill, inr, ready, Spinner, kindLabel } from "../ui";
@@ -288,7 +288,11 @@ function DiagnosisCard({ ro }: { ro: RO }) {
         <div className="font-bold">Booked online: the customer's own words</div>
         <span className={`chip ${live ? "bg-mint-500/15 text-mint-300" : "bg-slate-700/60 text-slate-300"}`}><Sparkles size={11} /> {live ? `AI · ${d.mode.slice(4)}` : `Keyword match`}</span>
       </div>
+      {d.voice && (
+        <div className="mt-2 flex items-center gap-2 text-xs"><span className="chip bg-sky-400/90 text-ink-950"><Mic size={11} /> VOICE NOTE</span><span className="text-slate-400">heard in {d.voice.language}</span></div>
+      )}
       <p className="mt-2 rounded-xl bg-ink-850 p-3 text-sm text-slate-200">“{ro.complaint}”</p>
+      {d.voice && !["en", "english"].includes(d.voice.language) && <p className="mt-1 text-sm text-slate-400">English: {d.voice.english}</p>}
       {d.summary && live && <p className="mt-2 text-sm text-slate-400">AI summary: {d.summary}</p>}
       <div className="mt-3 label">Suggested part lines ({d.parts.length})</div>
       {d.parts.length === 0 && <div className="mt-1 text-sm text-amber-300">No part matched the description. Inspect the car and add lines below.</div>}

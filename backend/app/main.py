@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import secrets
 import urllib.parse
 import urllib.request
@@ -16,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from . import db, diagnose, engine, explainer, llm, seed
+from . import db, diagnose, engine, explainer, learning, llm, seed, speech
 from .rules import RuleSet, Weights, parse_rules, set_version
 
 app = FastAPI(title="PartWise API", version="1.0")
@@ -145,6 +146,7 @@ def meta():
         "home": home_rooftop(),
         "rooftops": db.rows("SELECT * FROM rooftops"),
         "llm": llm.info(),
+        "voice": speech.available(),
         "rules_version": rules.version,
         "twilio": bool(os.environ.get("TWILIO_ACCOUNT_SID")),
     }
@@ -281,12 +283,28 @@ def diagnose_endpoint(body: DiagnoseBody):
 class IntakeBody(BaseModel):
     vehicle: NewVehicle
     complaint: str = Field(min_length=5, max_length=2000)
+    complaint_en: str | None = Field(default=None, max_length=2000)  # English version of a voice note
+    voice: bool = False
+    language: str | None = None
+
+
+@app.post("/api/transcribe")
+async def transcribe(request: Request):
+    """Voice note (raw audio body) -> transcript in the customer's language + English."""
+    audio = await request.body()
+    try:
+        return speech.transcribe(audio, request.headers.get("content-type", "audio/webm"))
+    except speech.SpeechError as e:
+        raise HTTPException(422, str(e))
 
 
 @app.post("/api/intake")
 def intake(body: IntakeBody):
     """Customer self-service booking: their details + their own description of the problem."""
-    dx = diagnose.diagnose(body.complaint, body.vehicle.model_dump(), catalog())
+    english = (body.complaint_en or "").strip()
+    dx = diagnose.diagnose(english or body.complaint, body.vehicle.model_dump(), catalog())
+    if body.voice:
+        dx["voice"] = {"language": body.language or "unknown", "english": english or body.complaint}
     ro_id = _next_ro_id()
     token = secrets.token_urlsafe(6)
     with db.tx() as c:
@@ -297,7 +315,7 @@ def intake(body: IntakeBody):
         for p in dx["parts"]:
             c.execute("INSERT INTO ro_lines (ro_id, part_id, labor_desc) VALUES (?,?,?)",
                       (ro_id, p["part_id"], f"Suspected from customer description: {p['reason']}"[:200]))
-        db.audit(c, ro_id, "Customer", "ONLINE_BOOKING", {"complaint_chars": len(body.complaint)})
+        db.audit(c, ro_id, "Customer", "ONLINE_BOOKING", {"complaint_chars": len(body.complaint), "voice": body.voice, "language": body.language})
         db.audit(c, ro_id, "AI intake", "SYMPTOMS_MAPPED", {"mode": dx["mode"], "parts": [p["part_id"] for p in dx["parts"]], "llm_input_has_pii": False})
     return {"ro_id": ro_id, "token": token, "diagnosis": dx}
 
@@ -533,10 +551,21 @@ def customer_choose(token: str, body: ChooseBody):
                     idle_value = opt["price"]
             elif opt["id"].startswith("oem-"):
                 db.audit(c, ro["id"], "PartWise → ARC", "OEM_ORDER_PLACED", {"part": line["part_name"]})
-            c.execute("INSERT INTO outcomes (ro_id, line_id, rooftop_id, part_id, category, decision, chosen_condition, had_alternative, savings_inr, co2_saved_kg, wait_days_saved, idle_value_moved, transfer_fee, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            # Learning signal: was a green part offered next to new, and did the customer take it?
+            feats, accepted = None, None
+            if not vl["fixed"]:
+                offered = [engine.option_by_id(p, o["id"]) for o in vl["options"]]
+                greens = [o for o in offered if o and o["condition"] != "new"]
+                new_opt = engine.option_by_id(p, p["best_new_id"])
+                if greens and new_opt:
+                    g = opt if opt["condition"] != "new" else greens[0]
+                    feats = learning.decision_features(g, new_opt)
+                    accepted = int(opt["condition"] != "new")
+            c.execute("INSERT INTO outcomes (ro_id, line_id, rooftop_id, part_id, category, decision, chosen_condition, had_alternative, savings_inr, co2_saved_kg, wait_days_saved, idle_value_moved, transfer_fee, created_at, features, accepted) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (ro["id"], line_id, ro["rooftop_id"], line["part_id"], line["category"], line["recommendation"]["decision"],
                        opt["condition"], int(any(o["eligible"] and o["condition"] != "new" for o in p["options"])),
-                       imp["savings_inr"], imp["co2_saved_kg"], imp["wait_days_saved"], idle_value, fee, db.now()))
+                       imp["savings_inr"], imp["co2_saved_kg"], imp["wait_days_saved"], idle_value, fee, db.now(),
+                       json.dumps(feats) if feats else None, accepted))
             db.audit(c, ro["id"], "Customer", "CUSTOMER_CHOSE",
                      {"part": line["part_name"], "option": option_id, "type": opt["kind"], "savings_inr": imp["savings_inr"], "co2_saved_kg": imp["co2_saved_kg"]})
             db.audit(c, ro["id"], "PartWise → ARC", "ARC_WRITEBACK",
@@ -679,6 +708,35 @@ def put_rules(body: RulesBody):
         c.execute("INSERT INTO rules_versions VALUES (?,?,?,?,?)", (version, text, db.now(), body.author, body.note or parsed.note))
         db.audit(c, None, body.author, "RULES_PUBLISHED", {"version": version, "note": body.note})
     return get_rules()
+
+
+@app.get("/api/learning")
+def learning_report():
+    """What customers' accept/decline decisions say about the scoring weights."""
+    return learning.analyse(current_rules().scoring.weights.normalized())
+
+
+class ApplyLearned(BaseModel):
+    author: str = "Dealer admin"
+
+
+@app.post("/api/learning/apply")
+def apply_learned(body: ApplyLearned):
+    """Publish the suggested weights as a new, audited rules version."""
+    rep_ = learning.analyse(current_rules().scoring.weights.normalized())
+    if not rep_.get("ready"):
+        raise HTTPException(409, f"Need at least {learning.MIN_DECISIONS} customer decisions first")
+    text = db.row("SELECT yaml FROM rules_versions ORDER BY version DESC LIMIT 1")["yaml"]
+    for f, v in rep_["suggested_weights"].items():
+        text, n = re.subn(rf"(\n\s+{f}:\s*)[0-9.]+", rf"\g<1>{v:.2f}", text, count=1)
+        if not n:
+            raise HTTPException(500, f"could not find weight '{f}' in rules.yaml")
+    note = f"Weights learned from {rep_['n']} customer decisions"
+    put_rules(RulesBody(yaml=text, author=body.author, note=note))
+    with db.tx() as c:
+        db.audit(c, None, body.author, "WEIGHTS_LEARNED", {"n": rep_["n"], "weights": rep_["suggested_weights"],
+                                                           "evidence_share": rep_["evidence_share"]})
+    return {"rules": get_rules(), "learning": learning.analyse(current_rules().scoring.weights.normalized())}
 
 
 class PreviewBody(BaseModel):

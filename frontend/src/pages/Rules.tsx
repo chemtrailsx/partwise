@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FlaskConical, Save, History, ArrowRight, CheckCircle2 } from "lucide-react";
+import { FlaskConical, Save, History, ArrowRight, CheckCircle2, Brain, Leaf } from "lucide-react";
 import { api, type ROSummary } from "../api";
 import { inr, Spinner } from "../ui";
 
@@ -66,6 +66,11 @@ export default function Rules() {
         <h1 className="mt-1 text-3xl font-extrabold">Rules & What-if</h1>
         <p className="mt-1 text-slate-400">Safety and warranty are hard rules. Scoring weights are policy: tune them and see the effect before you publish.</p>
       </div>
+
+      <LearningPanel
+        onPreview={(sw) => { setW(sw); window.scrollTo({ top: 600, behavior: "smooth" }); }}
+        onPublished={(d) => { setR(d); setText(d.yaml); setW(d.parsed.scoring.weights); setMsg({ ok: true, t: `Published rules v${d.version} with learned weights. Re-run PartWise on open repair orders to apply them.` }); }}
+      />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="card p-5">
@@ -148,6 +153,106 @@ export default function Rules() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface Learning {
+  ready: boolean; n: number; live_decisions: number; simulated_decisions: number; min_decisions: number;
+  labels: Record<string, string>; current_weights: Record<string, number>;
+  learned_weights?: Record<string, number>; suggested_weights?: Record<string, number>; coefficients?: Record<string, number>;
+  acceptance_rate?: number; accuracy?: number; baseline_accuracy?: number; evidence_share?: number; co2_floor?: number; insights?: string[];
+}
+
+const FACTORS = ["price", "wait", "co2", "warranty", "car_age_fit"];
+
+function LearningPanel({ onPreview, onPublished }: { onPreview: (w: Record<string, number>) => void; onPublished: (r: RulesResp) => void }) {
+  const [L, setL] = useState<Learning | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const load = () => api.get<Learning>("/api/learning").then(setL).catch((e) => setErr(e.message));
+  useEffect(() => { load(); }, []);
+
+  async function publish() {
+    setBusy(true); setErr("");
+    try {
+      const r = await api.post<{ rules: RulesResp; learning: Learning }>("/api/learning/apply", {});
+      setL(r.learning);
+      onPublished(r.rules);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  if (!L) return <div className="card p-5 text-slate-400">Loading customer decisions…</div>;
+  if (!L.ready) return (
+    <div className="card p-5 text-sm text-slate-400"><Brain size={16} className="mr-2 inline text-mint-400" />Learning starts after {L.min_decisions} customer decisions ({L.n} so far).</div>
+  );
+  const pct = (x?: number) => `${Math.round((x ?? 0) * 100)}%`;
+  const same = FACTORS.every((f) => Math.abs((L.suggested_weights![f] ?? 0) - (L.current_weights[f] ?? 0)) < 0.01);
+
+  return (
+    <div className="card border-mint-700/60 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-lg font-bold"><Brain size={19} className="text-mint-400" /> Learned from customer decisions</div>
+          <div className="mt-1 text-sm text-slate-400">
+            Every time a customer is offered a recycled part next to a new one, PartWise records what they chose.
+            A logistic-regression model finds which factors really drive acceptance.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => onPreview(L.suggested_weights!)} className="btn-ghost text-xs"><FlaskConical size={13} /> Try in What-if</button>
+          <button onClick={publish} disabled={busy || same} className="btn-primary text-xs">{busy ? <Spinner /> : <Save size={13} />} {same ? "Already applied" : "Publish learned weights"}</button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Mini label="Decisions learned from" value={L.n.toLocaleString("en-IN")} sub={`${L.live_decisions} live · ${L.simulated_decisions} simulated pilot`} />
+        <Mini label="Customers took the green part" value={pct(L.acceptance_rate)} />
+        <Mini label="Model predicts choices" value={pct(L.accuracy)} sub={`vs ${pct(L.baseline_accuracy)} guessing the usual answer`} />
+        <Mini label="Weight given to evidence" value={pct(L.evidence_share)} sub="grows as decisions accumulate" />
+      </div>
+
+      <div className="mt-5 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div className="space-y-3">
+          <div className="flex gap-4 text-[11px] text-slate-400">
+            <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-slate-500" />Current policy</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-sky-400" />What customers value</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-mint-500" />Suggested</span>
+          </div>
+          {FACTORS.map((f) => (
+            <div key={f} className="grid grid-cols-[96px_1fr] items-center gap-3 text-sm">
+              <span className="flex items-center gap-1 text-slate-300">{L.labels[f]}{f === "co2" && <Leaf size={12} className="text-mint-400" />}</span>
+              <div className="space-y-1">
+                {([["current_weights", "bg-slate-500"], ["learned_weights", "bg-sky-400"], ["suggested_weights", "bg-mint-500"]] as const).map(([k, c]) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <div className="h-2 flex-1 rounded-full bg-ink-800"><div className={`h-full rounded-full ${c} transition-all`} style={{ width: `${((L as any)[k][f] ?? 0) * 100}%` }} /></div>
+                    <span className="w-9 text-right text-[11px] text-slate-400">{pct((L as any)[k][f])}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          <div className="label">What the data says</div>
+          {L.insights!.map((t, i) => <div key={i} className="rounded-xl bg-ink-850 p-3 text-sm text-slate-200">{t}</div>)}
+          <div className="rounded-xl border border-mint-700/50 bg-mint-500/5 p-3 text-xs text-slate-300">
+            <Leaf size={12} className="mr-1 inline text-mint-400" /> CO₂ is a sustainability goal, not just a customer preference, so learning never lowers its weight below the policy ({pct(L.co2_floor)}).
+          </div>
+          <div className="text-[11px] text-slate-500">Suggested = current policy blended with what customers value, in proportion to the evidence. Publishing creates a new, audited rules version.</div>
+          {err && <div className="text-sm text-red-300">{err}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Mini({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl bg-ink-850 p-3">
+      <div className="label">{label}</div>
+      <div className="mt-1 text-xl font-extrabold text-white">{value}</div>
+      {sub && <div className="text-[11px] text-slate-500">{sub}</div>}
     </div>
   );
 }
