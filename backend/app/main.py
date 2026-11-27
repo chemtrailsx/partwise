@@ -64,6 +64,8 @@ def latest_rec(line_id: int) -> dict | None:
 
 def ro_detail(ro_id: str) -> dict:
     ro = db.row("SELECT * FROM repair_orders WHERE id=?", (ro_id,))
+    if not ro and db.refresh():  # created on another serverless instance
+        ro = db.row("SELECT * FROM repair_orders WHERE id=?", (ro_id,))
     if not ro:
         raise HTTPException(404, "Repair order not found")
     v = get_vehicle(ro["vehicle_id"])
@@ -478,6 +480,8 @@ def _customer_view(ro: dict) -> dict:
 
 def _ro_by_token(token: str) -> dict:
     r = db.row("SELECT id FROM repair_orders WHERE customer_token=?", (token,))
+    if not r and db.refresh():  # created on another serverless instance
+        r = db.row("SELECT id FROM repair_orders WHERE customer_token=?", (token,))
     if not r:
         raise HTTPException(404, "This link has expired or is invalid")
     return ro_detail(r["id"])

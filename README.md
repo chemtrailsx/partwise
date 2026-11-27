@@ -21,7 +21,17 @@ Open http://localhost:8000. The first run builds the React app.
 
 **Dev mode (hot reload):** `python -m uvicorn --app-dir backend app.main:app --reload` and `npm run dev` in `frontend/` (opens on :5173 and proxies `/api`).
 
-## Deploy (public URL)
+## Live deployment (Vercel)
+
+Live at **https://partwise-ten.vercel.app** (customer booking at `/book`).
+
+- `api/index.py` + `vercel.json`: one Python function serves the API and the prebuilt React app (`frontend/dist`, built locally before `vercel deploy --prod`).
+- `GROQ_API_KEY` is an encrypted Vercel environment variable.
+- **Durable data:** serverless disks are temporary, so `backend/app/blobstore.py` keeps a snapshot of the SQLite file in a *private* Vercel Blob store (`BLOB_READ_WRITE_TOKEN`). It restores on cold start, uploads after every write, and reloads when a request asks for a repair order another instance created. Locally (no token) it does nothing.
+
+To redeploy: `cd frontend && npm run build && cd .. && vercel deploy --prod`.
+
+## Deploy elsewhere (Docker)
 
 The repo includes a `Dockerfile` (builds the React app, serves everything from FastAPI) and a `render.yaml` blueprint.
 

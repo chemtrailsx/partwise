@@ -8,6 +8,8 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime
 
+from . import blobstore
+
 DB_PATH = os.environ.get(
     "PARTWISE_DB",
     # Serverless hosts (Vercel) only allow writes under /tmp.
@@ -82,9 +84,28 @@ _lock = threading.RLock()
 _conn: sqlite3.Connection | None = None
 
 
-def conn() -> sqlite3.Connection:
+def _restore_snapshot() -> None:
+    """Cold start on a serverless host: pull the latest durable snapshot, if any."""
+    if blobstore.enabled() and not os.path.exists(DB_PATH):
+        try:
+            blobstore.download(DB_PATH)
+        except Exception as e:  # never block startup; we'll reseed instead
+            print(f"[partwise] blob restore failed: {type(e).__name__}: {e}")
+
+
+def _sync_snapshot() -> None:
+    if blobstore.enabled():
+        try:
+            blobstore.upload(DB_PATH)
+        except Exception as e:
+            print(f"[partwise] blob upload failed: {type(e).__name__}: {e}")
+
+
+def conn(restore: bool = True) -> sqlite3.Connection:
     global _conn
     if _conn is None:
+        if restore:
+            _restore_snapshot()
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.executescript(SCHEMA)
@@ -108,6 +129,7 @@ def tx():
         except Exception:
             c.rollback()
             raise
+        _sync_snapshot()
 
 
 def rows(sql: str, params: tuple | list = ()) -> list[dict]:
@@ -141,4 +163,24 @@ def reset():
             _conn = None
         if os.path.exists(DB_PATH):
             os.remove(DB_PATH)
-        conn()
+        conn(restore=False)
+
+
+def refresh() -> bool:
+    """Another serverless instance may have written newer data: reload the snapshot."""
+    global _conn
+    if not blobstore.enabled():
+        return False
+    with _lock:
+        tmp = DB_PATH + ".fresh"
+        try:
+            if not blobstore.download(tmp):
+                return False
+        except Exception:
+            return False
+        if _conn is not None:
+            _conn.close()
+            _conn = None
+        os.replace(tmp, DB_PATH)
+        conn(restore=False)
+        return True
