@@ -1,9 +1,8 @@
 frontend/node_modules
-frontend/src
+frontend/dist
 backend/.env
 backend/partwise.db
 **/__pycache__
 Dockerfile
 render.yaml
 .env.local
-.vercel
